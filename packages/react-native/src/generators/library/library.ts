@@ -100,6 +100,7 @@ export async function reactNativeLibraryGeneratorInternal(
   }
 
   const lintTask = await addLinting(host, {
+    unitTestRunner: options.unitTestRunner,
     ...options,
     projectName: options.name,
     tsConfigPaths: [

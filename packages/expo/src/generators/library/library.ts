@@ -93,6 +93,7 @@ export async function expoLibraryGeneratorInternal(
   }
 
   const lintTask = await addLinting(host, {
+    unitTestRunner: options.unitTestRunner,
     ...options,
     projectName: options.projectName,
     tsConfigPaths: [
