@@ -11,6 +11,7 @@ export {
   resolvePrompt,
   PromptResolutionError,
   acknowledgeBuildScripts,
+  getGraphTimeEnvForTask,
 } from 'nx/src/devkit-internals';
 
 // Generators
