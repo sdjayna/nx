@@ -1,6 +1,6 @@
 import { Tree } from 'nx/src/generators/tree';
 import type { Linter as EsLintLinter } from 'eslint';
-import { LinterType } from '@nx/eslint';
+import { LinterType } from '@nx/js';
 import { joinPathFragments } from 'nx/src/utils/path';
 import {
   addDependenciesToPackageJson,
