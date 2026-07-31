@@ -1,6 +1,6 @@
 import { Tree } from 'nx/src/generators/tree';
 import type { Linter as EsLintLinter } from 'eslint';
-import { Linter, LinterType } from '@nx/eslint';
+import { LinterType } from '@nx/eslint';
 import { joinPathFragments } from 'nx/src/utils/path';
 import {
   addDependenciesToPackageJson,
@@ -27,7 +27,7 @@ import { addLintingToProject } from '@nx/js';
 export async function addLinting(
   host: Tree,
   options: {
-    linter: Linter | LinterType;
+    linter: LinterType;
     projectName: string;
     projectRoot: string;
     unitTestRunner?: 'vitest' | 'none';
