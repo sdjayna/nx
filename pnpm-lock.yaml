@@ -687,9 +687,6 @@ importers:
       '@nx/next':
         specifier: 23.2.0-beta.4
         version: 23.2.0-beta.4(d82e6921059763f3a8fdcc178e42d3bb)
-      '@nx/oxlint':
-        specifier: workspace:*
-        version: link:packages/oxlint
       '@nx/playwright':
         specifier: 23.2.0-beta.4
         version: 23.2.0-beta.4(@babel/traverse@7.29.7)(@nx/jest@23.2.0-beta.4(f29fa98841d21ccc5db106d3fb3edeed))(@playwright/test@1.60.0)(@swc-node/register@1.11.1(@swc/core@1.15.10(@swc/helpers@0.5.18))(@swc/types@0.1.25)(typescript@6.0.3))(@swc/cli@0.8.1(@swc/core@1.15.10(@swc/helpers@0.5.18))(chokidar@3.6.0))(@swc/core@1.15.10(@swc/helpers@0.5.18))(@zkochan/js-yaml@0.0.7)(eslint@9.39.4(jiti@2.7.0))(nx@23.2.0-beta.4(@swc-node/register@1.11.1(@swc/core@1.15.10(@swc/helpers@0.5.18))(@swc/types@0.1.25)(typescript@6.0.3))(@swc/core@1.15.10(@swc/helpers@0.5.18)))(verdaccio@6.3.2(encoding@0.1.13)(typanion@3.14.0))
