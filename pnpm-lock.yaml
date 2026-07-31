@@ -3382,7 +3382,7 @@ importers:
         specifier: workspace:*
         version: link:../js
       oxlint:
-        specifier: ^1.0.0
+        specifier: ^1.43.0
         version: 1.75.0
       tslib:
         specifier: catalog:typescript

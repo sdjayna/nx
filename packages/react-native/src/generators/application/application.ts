@@ -82,7 +82,6 @@ export async function reactNativeApplicationGeneratorInternal(
   }
 
   const lintTask = await addLinting(host, {
-    unitTestRunner: options.unitTestRunner,
     ...options,
     projectRoot: options.appProjectRoot,
     tsConfigPaths: [
