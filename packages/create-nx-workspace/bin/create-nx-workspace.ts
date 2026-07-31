@@ -1152,10 +1152,10 @@ async function determineFormatterOptions(
   return reply.prettier === 'Yes' ? 'prettier' : 'none';
 }
 
-async function determineLinterOptions(
-  args: { linter?: Linter; interactive?: boolean },
-  opts?: { preferEslint?: boolean }
-): Promise<Linter> {
+async function determineLinterOptions(args: {
+  linter?: Linter;
+  interactive?: boolean;
+}): Promise<Linter> {
   if (args.linter) return args.linter;
   const reply = await enquirer.prompt<{ linter: Linter }>([
     {
@@ -1170,7 +1170,8 @@ async function determineLinterOptions(
         { name: 'oxlint', message: 'oxlint (experimental)' },
         { name: 'none' },
       ],
-      initial: opts?.preferEslint ? 0 : 2,
+      // ESLint while Oxlint is experimental. One index change flips it.
+      initial: 0,
       skip: !args.interactive || isCI(),
     },
   ]);
@@ -1377,7 +1378,7 @@ async function determineReactOptions(
   }
 
   if (workspaces) {
-    linter = await determineLinterOptions(parsedArgs, { preferEslint: true });
+    linter = await determineLinterOptions(parsedArgs);
     formatter = await determineFormatterOptions(parsedArgs, {
       preferPrettier: true,
     });
@@ -1489,7 +1490,7 @@ async function determineVueOptions(
   }
 
   if (workspaces) {
-    linter = await determineLinterOptions(parsedArgs, { preferEslint: true });
+    linter = await determineLinterOptions(parsedArgs);
     formatter = await determineFormatterOptions(parsedArgs, {
       preferPrettier: true,
     });
@@ -1785,7 +1786,7 @@ async function determineNodeOptions(
   });
 
   if (workspaces) {
-    linter = await determineLinterOptions(parsedArgs, { preferEslint: true });
+    linter = await determineLinterOptions(parsedArgs);
     formatter = await determineFormatterOptions(parsedArgs, {
       preferPrettier: true,
     });
