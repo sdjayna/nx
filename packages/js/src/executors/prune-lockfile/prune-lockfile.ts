@@ -14,7 +14,6 @@ import { interpolate } from 'nx/src/tasks-runner/utils';
 import {
   type PackageJson,
   type PackageJsonDependencySection,
-  stripPrunedLockfilePnpmConfig,
   writePrunedPnpmInstallSettings,
 } from 'nx/src/utils/package-json';
 // eslint-disable-next-line @typescript-eslint/no-restricted-imports
@@ -62,9 +61,6 @@ export default async function pruneLockfileExecutor(
       getLockFileName(packageManager)
     );
     writeFileSync(lockfileOutputPath, lockFileContent);
-    // The pruned lockfile bakes pnpm config into its snapshots, so strip the
-    // manifest's pnpm config to avoid ERR_PNPM_LOCKFILE_CONFIG_MISMATCH.
-    stripPrunedLockfilePnpmConfig(packageJson);
     writeFileSync(
       join(outputDirectory, 'package.json'),
       JSON.stringify(packageJson, null, 2)
