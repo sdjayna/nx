@@ -1896,3 +1896,180 @@ describe('pending dotenv replay before serving a graph', () => {
     expect(retrieveCallCount).toBe(2);
   });
 });
+
+describe('request during an in-flight recomputation', () => {
+  let fs: TempFs;
+
+  beforeEach(() => {
+    fs = new TempFs('pgir-in-flight');
+  });
+
+  afterEach(() => {
+    fs.cleanup();
+  });
+
+  // Parks the computation a scheduled batch starts inside its config
+  // retrieval, before it has drained its snapshot from collected*, and
+  // counts kickoffs by their synchronous plugin load. The mocks control
+  // timing and observation, not logic: the real retrieval runs.
+  const setup = async () => {
+    fs.createFilesSync({
+      'nx.json': JSON.stringify({}),
+      'package.json': JSON.stringify({ name: 'root' }),
+      'libs/foo/project.json': JSON.stringify({
+        name: 'foo',
+        root: 'libs/foo',
+        tags: ['v1'],
+      }),
+    });
+
+    vi.resetModules();
+    // The plugin-loader mocks vi.doMock installs in the tests above are
+    // registry-wide and outlive vi.resetModules.
+    vi.doUnmock('../../project-graph/plugins/get-plugins');
+    const { setWorkspaceRoot } = await import('../../utils/workspace-root');
+    setWorkspaceRoot(fs.tempDir);
+
+    let releaseSecondRetrieve: () => void;
+    const secondRetrieveGate = new Promise<void>((resolve) => {
+      releaseSecondRetrieve = resolve;
+    });
+    const counts = { retrieve: 0, kickoffs: 0, secondRetrieveReached: false };
+    vi.doMock(
+      '../../project-graph/utils/retrieve-workspace-files',
+      async () => {
+        const actual = (await vi.importActual(
+          '../../project-graph/utils/retrieve-workspace-files'
+        )) as any;
+        return {
+          ...actual,
+          retrieveProjectConfigurations: async (...args: unknown[]) => {
+            if (++counts.retrieve === 2) {
+              counts.secondRetrieveReached = true;
+              await secondRetrieveGate;
+            }
+            return actual.retrieveProjectConfigurations(...args);
+          },
+        };
+      }
+    );
+    // kickOffRecompute loads plugins before its first await, so this call
+    // count is exactly the number of kickoffs so far. A plain factory that
+    // resolves the actual lazily, as the module sits in a require cycle.
+    vi.doMock('../../project-graph/plugins/get-plugins', async () => ({
+      __esModule: true,
+      getPlugins: async () => [],
+      getPluginsSeparated: async (...args: unknown[]) => {
+        ++counts.kickoffs;
+        return (
+          await vi.importActual<
+            typeof import('../../project-graph/plugins/get-plugins')
+          >('../../project-graph/plugins/get-plugins')
+        ).getPluginsSeparated(...args);
+      },
+    }));
+
+    const recomputation =
+      await import('./project-graph-incremental-recomputation');
+    const { serverLogger } = await import('../logger');
+    const logSpy = vi.spyOn(serverLogger, 'log');
+    const decided = () =>
+      logSpy.mock.calls.some(([line]) =>
+        /^(Awaiting in-flight|Recomputing project graph|Reusing in-memory)/.test(
+          String(line)
+        )
+      );
+
+    const projectJson = join(fs.tempDir, 'libs/foo/project.json');
+    const writeTag = (tag: string) => {
+      writeFileSync(
+        projectJson,
+        JSON.stringify({ name: 'foo', root: 'libs/foo', tags: [tag] })
+      );
+      recomputation.scheduleProjectGraphRecomputation(
+        [],
+        ['libs/foo/project.json'],
+        []
+      );
+    };
+
+    return {
+      ...recomputation,
+      counts,
+      logSpy,
+      decided,
+      writeTag,
+      releaseSecondRetrieve: () => releaseSecondRetrieve(),
+    };
+  };
+
+  // The computation a batch started still holds that batch in collected*
+  // for its whole plugin phase: the snapshot is drained only at commit. A
+  // request arriving then must wait for that computation, not read the
+  // queue as evidence of unprocessed changes and start over; a second
+  // kickoff marks the first stale at its next checkpoint, so the caller
+  // pays a full second pass for a change the first was already reading.
+  it('awaits the computation the batch started instead of kicking off another', async (ctx) => {
+    const t = await setup();
+    const waitFor = waitForIn(ctx);
+
+    const first = await t.getCachedSerializedProjectGraphPromise();
+    expect(first.projectGraph.nodes.foo.data.tags).toEqual(['v1']);
+    expect(t.counts.kickoffs).toBe(1);
+
+    t.writeTag('v2');
+    expect(t.counts.kickoffs).toBe(2);
+    await waitFor(() => t.counts.secondRetrieveReached, 'compute B to park');
+
+    t.logSpy.mockClear();
+    const second = t.getCachedSerializedProjectGraphPromise();
+    await waitFor(t.decided, 'the request to decide');
+    expect(t.counts.kickoffs).toBe(2);
+    expect(t.logSpy.mock.calls.map(([line]) => String(line))).toContain(
+      'Awaiting in-flight project graph computation (1 queued changes already snapshotted).'
+    );
+    t.releaseSecondRetrieve();
+
+    const result = await second;
+    expect(result.error).toBeNull();
+    expect(result.projectGraph.nodes.foo.data.tags).toEqual(['v2']);
+    expect(t.counts.kickoffs).toBe(2);
+    expect(t.counts.retrieve).toBe(2);
+
+    // Settled, drained: a further request reuses the cached graph.
+    t.logSpy.mockClear();
+    const third = await t.getCachedSerializedProjectGraphPromise();
+    expect(third.projectGraph.nodes.foo.data.tags).toEqual(['v2']);
+    expect(t.logSpy.mock.calls.map(([line]) => String(line))).toContain(
+      'Reusing in-memory cached project graph because no files changed.'
+    );
+    expect(t.counts.kickoffs).toBe(2);
+  });
+
+  // A batch that lands after the kickoff is not covered by the computation
+  // in flight, so it starts its own, and the request chains onto that one
+  // rather than adding a fourth.
+  it('a batch after the kickoff starts another computation, which the request awaits', async (ctx) => {
+    const t = await setup();
+    const waitFor = waitForIn(ctx);
+
+    const first = await t.getCachedSerializedProjectGraphPromise();
+    expect(first.projectGraph.nodes.foo.data.tags).toEqual(['v1']);
+
+    t.writeTag('v2');
+    await waitFor(() => t.counts.secondRetrieveReached, 'compute B to park');
+    t.writeTag('v3');
+    expect(t.counts.kickoffs).toBe(3);
+
+    t.logSpy.mockClear();
+    const second = t.getCachedSerializedProjectGraphPromise();
+    await waitFor(t.decided, 'the request to decide');
+    expect(t.counts.kickoffs).toBe(3);
+    t.releaseSecondRetrieve();
+
+    const result = await second;
+    expect(result.error).toBeNull();
+    expect(result.projectGraph.nodes.foo.data.tags).toEqual(['v3']);
+    expect(t.counts.kickoffs).toBe(3);
+  });
+});

@@ -108,6 +108,11 @@ let storedWorkspaceConfigHash: string | undefined;
 let knownExternalNodes: Record<string, ProjectGraphExternalNode> = {};
 let fileChangeCounter = 0;
 let recomputationGeneration = 0;
+// The fileChangeCounter value at the last kickoff. A computation snapshots
+// collected* only once it has loaded its plugins, and drains its snapshot only
+// after it commits, so the queue alone cannot tell "changes a computation in
+// flight already owns" from "changes nobody has started on"; the counter can.
+let lastKickoffChangeCounter = -1;
 
 // The graph the settled cached promise serves, with the generation its
 // computation claimed. Set only when a computation's own success becomes the
@@ -139,6 +144,7 @@ function kickOffRecompute() {
   // The cached pointer is about to hold an unsettled promise, so whatever the
   // previous state described is no longer what the cache serves.
   servedGraphState = null;
+  lastKickoffChangeCounter = fileChangeCounter;
   let myPromise: Promise<SerializedProjectGraph>;
   myPromise = (async () => {
     // Must resolve, never reject: kickOffRecompute() runs fire-and-forget, so
@@ -271,12 +277,18 @@ export async function getCachedSerializedProjectGraphPromise(
       invalidateGraphCache();
     }
 
-    // If no compute exists or events are still in collected*, kick one off.
-    // Otherwise reuse whatever is already in flight or cached.
+    // If no compute exists, or changes queued since the last kickoff have no
+    // computation on the way, kick one off. Otherwise reuse whatever is in
+    // flight or cached. Queued changes alone are not a reason: a computation
+    // drains its snapshot only when it commits, so during its plugin phase the
+    // queue still holds the very files it is processing, and a kickoff here
+    // would mark it stale at its next checkpoint and start over, costing the
+    // caller a second full pass.
+    const queuedChanges =
+      collectedUpdatedFiles.size + collectedDeletedFiles.size;
     const needsRecompute =
       !cachedSerializedProjectGraphPromise ||
-      collectedUpdatedFiles.size > 0 ||
-      collectedDeletedFiles.size > 0;
+      (queuedChanges > 0 && fileChangeCounter > lastKickoffChangeCounter);
     if (needsRecompute) {
       serverLogger.log(
         cachedSerializedProjectGraphPromise
@@ -284,6 +296,10 @@ export async function getCachedSerializedProjectGraphPromise(
           : 'No in-memory cached project graph found. Recomputing it...'
       );
       kickOffRecompute();
+    } else if (queuedChanges > 0) {
+      serverLogger.log(
+        `Awaiting in-flight project graph computation (${queuedChanges} queued changes already snapshotted).`
+      );
     } else {
       serverLogger.log(
         'Reusing in-memory cached project graph because no files changed.'
